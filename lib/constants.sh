@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# define the script variables with default values
+GENESTACK_REMOTE_URL="https://github.com/rackerlabs/genestack"
+
+CLONE_DEFAULT_OPTIONS=(--quiet --recurse-submodules -j4)
+
+GENESTACK_CLONE_PATH="/opt/genestack"
+
+DEFAULT_LOG_FILE="/var/log/genestack-image-parser.log"
+
+DEFAULT_BASE_HELM_IMAGES_PATH="$GENESTACK_CLONE_PATH/base-helm-configs"
+
+DEFAULT_BASE_KUSTOMIZE_IMAGES_PATH="$GENESTACK_CLONE_PATH/base-kustomize"
+
+DEFAULT_BASE_HELM_SUBDIRS=(barbican blazar ceilometer cinder cloudkitty designate freezer glance gnocchi heat horizon ironic keystone libvirt magnum masakari neutron nova octavia placement)
+
+DEFAULT_GENESTACK_HELM_IMAGE_LIST="/var/tmp/genestack-helm-images-list.txt"
+
+# special case variables
+GENESTACK_CHART_VERSION_FILE="$GENESTACK_CLONE_PATH/helm-chart-versions.yaml"
+
+# special case variables for longhorn
+declare -A HELM_CHARTS=([longhorn]="https://charts.longhorn.io" [envoy-gateway]="oci://docker.io/envoyproxy/gateway-helm" [metallb]="https://metallb.github.io/metallb")

@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# define the script variables with default values
+export GENESTACK_REMOTE_URL="https://github.com/rackerlabs/genestack"
+
+export CLONE_DEFAULT_OPTIONS=(--quiet --recurse-submodules -j4)
+
+export GENESTACK_CLONE_PATH="/opt/genestack"
+
+export DEFAULT_LOG_FILE="/var/log/genestack-image-parser.log"
+
+export DEFAULT_BASE_HELM_IMAGES_PATH="$GENESTACK_CLONE_PATH/base-helm-configs"
+
+export DEFAULT_BASE_KUSTOMIZE_IMAGES_PATH="$GENESTACK_CLONE_PATH/base-kustomize"
+
+export DEFAULT_BASE_HELM_SUBDIRS=(barbican blazar ceilometer cinder cloudkitty designate freezer glance gnocchi heat horizon ironic keystone libvirt magnum masakari neutron nova octavia placement)
+
+export DEFAULT_GENESTACK_HELM_IMAGE_LIST="/var/tmp/genestack-helm-images-list.txt"
+
+# special case variables
+export GENESTACK_CHART_VERSION_FILE="$GENESTACK_CLONE_PATH/helm-chart-versions.yaml"
+
+# special case variable for mariadb-operator
+#export MARIADB_OPERATOR_IMAGE_NAME=$(yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/mariadb-operator/mariadb-operator-helm-overrides.yaml" | jq -r '.image.repository')
+#export MARIADB_OPERATOR_IMAGE_TAG=$(grep 'mariadb-operator:' "$GENESTACK_CHART_VERSION_FILE" | sed 's/.*mariadb-operator: *//')
+
+# special case variable for mariadb cluster image
+#export MARIADB_CLUSTER_IMAGE=$(yaml2json "$DEFAULT_BASE_KUSTOMIZE_IMAGES_PATH/mariadb-cluster/base/mariadb-replication.yaml" | jq -r '.spec.image')

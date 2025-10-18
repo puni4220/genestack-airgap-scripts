@@ -48,11 +48,11 @@ function clone_git_repo ()  {
   fi
 }
 
-function special_case () {
+function special_case_infra_storage_kustomize () {
 
   # in this function we will handle special cases like mariadb, rabbitmq, memcached 
   # special case variable for mariadb-operator
-  write_log "INFO" "processing the required images for infra services: mariadb, rabbitmq and memcached"
+  write_log "INFO" "processing the required images for storage and infra services: mariadb, rabbitmq, memcached and rook-ceph"
   write_log "INFO" "deriving required images for mariadb: mariadb-operator, mariadb-cluster and mariadb-backup"
   write_log "DEBUG" "deriving the image name for mariadb-operator from mariadb-operator-helm-overrides.yaml"
   MARIADB_OPERATOR_IMAGE_NAME=$(yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/mariadb-operator/mariadb-operator-helm-overrides.yaml" | jq -r '.image.repository')
@@ -61,7 +61,7 @@ function special_case () {
 
   # special case variable for mariadb-backup image
   write_log "DEBUG" "deriving required image for mariadb-backup from the configmap on github"
-  MARIADB_BACKUP_IMAGE=$(curl -s -L "$GITHUB_BASE_URL/mariadb-operator/mariadb-operator/refs/tags/$MARIADB_OPERATOR_IMAGE_TAG/deploy/charts/mariadb-operator/templates/configmap.yaml" | grep MARIADB_OPERATOR_IMAGE | awk '{print $2}')
+  MARIADB_BACKUP_IMAGE=$(curl -sL "$GITHUB_BASE_URL/mariadb-operator/mariadb-operator/refs/tags/$MARIADB_OPERATOR_IMAGE_TAG/deploy/charts/mariadb-operator/templates/configmap.yaml" | grep MARIADB_OPERATOR_IMAGE | awk '{print $2}')
 
   # special case variable for mariadb cluster image
   write_log "DEBUG" "deriving required image for mariadb-cluster from mariadb-replication.yaml"
@@ -80,7 +80,7 @@ function special_case () {
 
   # obtain the IMAGE for rabbitmq-operator
   write_log "DEBUG" "derive the rabbitmq-operator image from the manifest URL"
-  RABBITMQ_OPERATOR_IMAGE=$(curl -s -L "$rabbitmq_operator_url" | egrep -w "image: .*" | awk '{print $2}')
+  RABBITMQ_OPERATOR_IMAGE=$(curl -sL "$rabbitmq_operator_url" | egrep -w "image: .*" | awk '{print $2}')
 
   # obtain the URL for rabbitmq-topology-operator image
   write_log "DEBUG" "derive the rabbitmq-topology-operator manifest URL from rabbitmq-operator kustomization.yaml"
@@ -88,7 +88,7 @@ function special_case () {
 
   # obtain the IMAGE for rabbitmq-topology-operator
   write_log "DEBUG" "derive the rabbitmq-topology-operator image from the manifest URL"
-  RABBITMQ_TOPOLOGY_OPERATOR_IMAGE=$(curl -s -L "$rabbitmq_topology_operator_url" | egrep -w "image: .*" | awk '{print $2}')
+  RABBITMQ_TOPOLOGY_OPERATOR_IMAGE=$(curl -sL "$rabbitmq_topology_operator_url" | egrep -w "image: .*" | awk '{print $2}')
 
   # obtain the version for the rabbitmq-cluster-operator
   write_log "DEBUG" "derive the rabbitmq-operator version from the URL"
@@ -96,7 +96,7 @@ function special_case () {
 
   # try to obtain the default rabbitmq image from rabbitmq operator
   write_log "DEBUG" "derive the required rabbitmq-cluster image from github"
-  RABBITMQ_CLUSTER_IMAGE=$(curl -s -L "$GITHUB_BASE_URL/rabbitmq/cluster-operator/refs/tags/$rabbitmq_operator_version/main.go" | grep -w defaultRabbitmqImage | grep management | awk '{print $3}' | sed 's/"//g')
+  RABBITMQ_CLUSTER_IMAGE=$(curl -sL "$GITHUB_BASE_URL/rabbitmq/cluster-operator/refs/tags/$rabbitmq_operator_version/main.go" | grep -w defaultRabbitmqImage | grep management | awk '{print $3}' | sed 's/"//g')
 
   # append the values to the existing list
   echo "$RABBITMQ_OPERATOR_IMAGE" >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
@@ -111,9 +111,33 @@ function special_case () {
   # append the values to the existing list
   echo "$MEMCACHED_CLUSTER_IMAGE" >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
   write_log "INFO" "all required images for memcached processed and appended to the list"
+
+  # obtain the images required for rook-ceph cluster
+  write_log "INFO" "deriving the required images for rook-ceph-operator and rook-ceph cluster"
+  write_log "DEBUG" "deriving the required image for rook-ceph-operator from operator.yaml"
+  ROOK_CEPH_OPERATOR_IMAGE=$(egrep "image:" "$DEFAULT_BASE_KUSTOMIZE_IMAGES_PATH/rook-operator/base/operator.yaml" | awk '{print $2}')
+
+  # obtain the tag for the rook-ceph-operator image
+  write_log "DEBUG" "obtain the tag for the rook-ceph-operator-image"
+  rook_ceph_operator_tag=$(echo "$ROOK_CEPH_OPERATOR_IMAGE" | cut -d ":" -f2)
+  
+  # from the tag determine the required images for csi plugins for rook-ceph cluster from github
+  write_log "DEBUG" "derive the required images for rook-ceph cluster from github based on operator image tag"
+  ROOK_CEPH_CSI_IMAGES=$(curl -sL "$GITHUB_BASE_URL/rook/rook/$rook_ceph_operator_tag/pkg/operator/ceph/csi/spec.go" | grep 'Default.*Image' | awk -F'"' '{print $2}')
+
+  # determine the required image for rook-ceph cluster
+  write_log "DEBUG" "deriving the required image for rook-ceph cluster"
+  ROOK_CEPH_CLUSTER_IMAGE=$(egrep "image:" "$DEFAULT_BASE_KUSTOMIZE_IMAGES_PATH/rook-cluster/base/rook-cluster.yaml" | awk '{print $2}')
+
+  # append the values to the existing list
+  echo "$ROOK_CEPH_OPERATOR_IMAGE" >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+  echo "$ROOK_CEPH_CSI_IMAGES" | tr " " "\n" >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+  echo "$ROOK_CEPH_CLUSTER_IMAGE" >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+  write_log "INFO" "all required images for rook-ceph processed and appended to the list"
+
 }
 
-function special_case_helm_repo () {
+function special_case_infra_storage_helm_repo () {
 
   # in this function we will handle special cases which required helm pull to fetch the details
   for helm_repo_name in "${!HELM_CHARTS[@]}"; do
@@ -180,5 +204,5 @@ done
 # set the trap for the error handling function
 trap 'error_handler' ERR
 main
-special_case
-special_case_helm_repo
+special_case_infra_storage_kustomize
+special_case_infra_storage_helm_repo

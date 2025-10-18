@@ -1,5 +1,24 @@
 #!/bin/bash
 
+function error_handler () {
+
+  # define the required parameters for the function
+  exit_code="$?"
+  line_number="${BASH_LINENO[0]}"
+  source_file="${BASH_SOURCE[1]}"
+  func_name="${FUNCNAME[1]}"
+
+  # provide details regarding the error
+  echo "-----------------------------------" >&2
+  echo "Error in script: $(basename "${BASH_SOURCE[0]}")" >&2
+  echo "Failed at line: $line_number" >&2
+  echo "Function Name: $func_name" >&2
+  echo "Exit code: $exit_code" >&2
+  echo "-----------------------------------" >&2
+
+  exit "$exit_code"
+}
+
 function init_log () {
   
   # if there's an existing log file create a backup
@@ -12,6 +31,12 @@ function init_log () {
 
   # initialize the new log file
   echo "$(date '+%Y-%m-%d %H:%M:%S') [INFO] - Log file created" > "$DEFAULT_LOG_FILE"
+  # check if debug logs are enabled
+  if [[ "$ENABLE_DEBUG" == "TRUE" ]]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [INFO] - Debug logs enabled!" > "$DEFAULT_LOG_FILE"
+  elif [[ "$ENABLE_DEBUG" == "FALSE" ]]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [INFO] - Debug logs disabled!" > "$DEFAULT_LOG_FILE"
+  fi
 }
 
 function write_log () {
@@ -21,27 +46,12 @@ function write_log () {
   LOG_MESSAGE="$2"
 
   # append the log message to the log file
+  if [[ "$LOG_LEVEL" == "DEBUG" ]]; then
+    if [[ "$ENABLE_DEBUG" == "TRUE" ]]; then
   echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_LEVEL] - $LOG_MESSAGE" >> "$DEFAULT_LOG_FILE"
-}
-
-function clone_git_repo ()  {
-
-  # check if the directory already exists and backup existing the directory
-  if [ -d "$GENESTACK_CLONE_PATH" ]; then
-    write_log "DEBUG" "Prevous clone of the repo found at $GENESTACK_CLONE_PATH"
-    # backup the existing dir
-    GENESTACK_BACKUP_PATH="$GENESTACK_CLONE_PATH-$(date +%Y%m%d_%H%M%S).bak"
-    mv "$GENESTACK_CLONE_PATH" "$GENESTACK_BACKUP_PATH"
-    write_log "INFO" "Previous repo clone backup created at $GENESTACK_BACKUP_PATH"
-    # clone the repository again
-    write_log "INFO" "Initiating new genestack repo clone at $GENESTACK_CLONE_PATH"
-    git clone "${CLONE_DEFAULT_OPTIONS[@]}" "$GENESTACK_REMOTE_URL" "$GENESTACK_CLONE_PATH"
-    write_log "DEBUG" "genestack repo clone successful"
-
-  else
-    # no existing clone; no backup required
-    write_log "INFO" "no existing clone; cloning genestack repo at $GENESTACK_CLONE_PATH"
-    git clone "${CLONE_DEFAULT_OPTIONS[@]}" "$GENESTACK_REMOTE_URL" "$GENESTACK_CLONE_PATH"
+    fi
+  elif [[ "$LOG_LEVEL" != "DEBUG" ]]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_LEVEL] - $LOG_MESSAGE" >> "$DEFAULT_LOG_FILE"
   fi
 }
 
@@ -55,6 +65,8 @@ function parse_helm_overries () {
 
   # temp helm list
   TMP_HELM_IMAGES_LIST="/var/tmp/tmp-helm-images-list.txt"
+
+  write_log "INFO" "parsing yaml file for openstack service $YAML_FILE_DIR"
 
   # cd into the subdirectory
   pushd "$DEFAULT_BASE_HELM_IMAGES_PATH/$YAML_FILE_DIR" > /dev/null
@@ -95,7 +107,7 @@ function add_helm_repo () {
     # since we have already pulled the repo return from the function
     return 0
   else
-    helm repo add "$HELM_REPO_NAME" "$HELM_REPO_URL"
+    helm repo add "$HELM_REPO_NAME" "$HELM_REPO_URL" &> /dev/null
     helm repo update &> /dev/null
   fi
 }

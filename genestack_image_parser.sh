@@ -4,8 +4,8 @@ set -euo pipefail
 set -E
 
 # import functions and constants
-source "$(pwd)/lib/constants.vars"
-source "$(pwd)/lib/functions.sh"
+source "$(dirname "$(readlink -f "$0")")/lib/constants.vars"
+source "$(dirname "$(readlink -f "$0")")/lib/functions.sh"
 
 function main () {
 

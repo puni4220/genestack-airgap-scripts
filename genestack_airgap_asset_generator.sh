@@ -206,7 +206,7 @@ function generate_list_infrastructure () {
   # 2) mariadb
   # 3) memcached
   # 4) envoy-proxy (Gateway API)
-  # 5) OVN
+  # 5) kube-ovn
   # 6) metallb
   # 7) libvirt
 
@@ -395,8 +395,91 @@ function generate_list_infrastructure () {
     >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
 }
 
+function generate_list_additional () {
+
+  # In this function we handle the generation of container
+  # images required for additional services. Below are the service
+  # for which the list of container images are generated
+  # 1) redis
+  # 2) OVN 
+
+  # Generate the list of container images for redis
+
+  print_log "INFO" "Generating the required images for redis"
+
+  # For redis we have
+  # 1) redis-operator 
+  # 2) redis-sentinel
+  # 3) redis-exporter
+  # 4) redis-replication
+
+  # For redis-operator download the helm chart because there's
+  # a difference in the container image on Github and in the
+  # helm values.yaml file
+
+  # First obtain the version of redis-operator from the 
+  # helm-chart-versions.yaml
+  redis_chart_version=$(grep 'redis-operator:' "$GENESTACK_CHART_VERSION_FILE" | sed 's/.*redis-operator: *//')
+
+  # If the directory for helm chart already exists remove the directory
+  # and then download the helm chart
+  if [ -d "/var/tmp/redis" ]; then
+    rm -rf "/var/tmp/redis"
+  fi
+
+  # Add the helm repo for redis-operator chart
+  helm repo add redis-operator https://ot-container-kit.github.io/helm-charts/ &> /dev/null
+  helm repo update &> /dev/null
+
+  # Download the helm chart for redis-operator
+  helm pull redis-operator/redis-operator --version "$redis_chart_version" \
+    --untar --untardir "/var/tmp/redis" 
+
+  # Find the helm chart directory
+  helm_chart_dir=$(find "/var/tmp/redis" -mindepth 1 -maxdepth 1 -type d)
+
+  # Find the helm values.yaml for redis-operator
+  helm_values_yaml=$(find "$helm_chart_dir" -mindepth 1 -maxdepth 1 -iname "values.yaml" -type f)
+
+  # From the values.yaml extract the required container images for redis-operator
+  yaml2json "$helm_values_yaml" | jq -r --arg tag "$redis_chart_version" '"\(.redisOperator.imageName):\($tag)"' \
+    >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+  
+  # For redis-replication and redis-exporter the container image is
+  # in base-helm-configs/redis-operator-replication/redis-replication-helm-overrides.yaml
+  yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-operator-replication/redis-replication-helm-overrides.yaml" | \
+    jq -r '.redisReplication | "\(.image):\(.tag)"' >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+  yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-operator-replication/redis-replication-helm-overrides.yaml" | \
+    jq -r '.redisExporter | "\(.image):\(.tag)"' >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST" 
+
+  # For redis-sentinel and redis-exporter the container image is 
+  # in base-helm-configs/redis-sentinel/redis-sentinel-helm-overrides.yaml
+  yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-sentinel/redis-sentinel-helm-overrides.yaml" | \
+    jq -r '.redisSentinel | "\(.image):\(.tag)"' >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+  yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-sentinel/redis-sentinel-helm-overrides.yaml" | \
+    jq -r '.redisExporter | "\(.image):\(.tag)"' >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+
+  # Generate the requird list of images for OVN
+  
+  print_log "INFO" "Generating the required images for OVN"
+
+  # For ovn the required container images are in
+  # base-kustomize/ovn/base/ovn-setup.yaml
+  grep -w "image:" "$DEFAULT_BASE_KUSTOMIZE_IMAGES_PATH/ovn/base/ovn-setup.yaml" | awk '{ print $2}' | \
+    sed 's/"//g' | sort -u >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+
+  print_log "INFO" "Generating the required images for ovn-backup"
+
+  # For ovn backup the requird container images are 
+  # in base-kustomize/ovn-backup/base/ovn-backup.yaml
+  grep -w "image:" "$DEFAULT_BASE_KUSTOMIZE_IMAGES_PATH/ovn-backup/base/ovn-backup.yaml" | \
+    awk '{print $2}' >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+
+}
+
 # set the trap for the error handling function
 trap 'error_handler' ERR
 main
 generate_list_storage
 generate_list_infrastructure
+generate_list_additional

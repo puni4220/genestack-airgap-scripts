@@ -41,6 +41,54 @@ function print_log () {
   fi
 }
 
+function parse_helm_override_files () {
+
+  # In this function we parse the helm overrides in base-helm-configs
+  # for openstack services; this function accepts the name of the 
+  # service directory as an argument and parses the helm overrides
+  # for the service
+
+  # Obtain the name of the service dir as an argument
+  local service_dir="$1"
+
+  # Create a temp file for the list of all the images
+  local tmp_helm_image_list="/var/tmp/service-helm-image-list.txt"
+
+  # Create a temp json file for the service overrides
+  local tmp_json_service_overrides="/var/tmp/tmp-json-service-overrides.json"
+
+  print_log "INFO" "Generating container image list for service $service_dir"
+
+  pushd "$DEFAULT_BASE_HELM_IMAGES_PATH/$service_dir" &> /dev/null
+
+  # Iterate over the files in the directory
+  for yaml_file in $(ls -1 .); do
+    yaml2json "$yaml_file" > "$tmp_json_service_overrides"
+
+    print_log "INFO" "parsing yaml $yaml_file in service directory $service_dir"
+
+    # Check if path '.images.tags' is found in the tmp json file
+    if jq -e '.images.tags' "$tmp_json_service_overrides" &> /dev/null; then 
+
+      # If required path is found generate the list of images for the service
+      print_log "DEBUG" "images are defined in file $yaml_file"
+
+      jq -r '.images.tags' "$tmp_json_service_overrides" | jq -r '.[]' | sort -u | grep -v null >> "$tmp_helm_image_list"
+
+      # remote the tmp json file for the service
+      rm -f "$tmp_json_service_overrides"
+      print_log "DEBUG" "image list generated for service $service_dir"
+
+    else
+      # images are not defined in the tmp json file
+      rm -f "$tmp_json_service_overrides"
+      print_log "INFO" "no images are defined in yaml file $yaml_file for service $service_dir"
+    fi
+  done
+  popd &> /dev/null
+
+}
+
 function clone_git_repo ()  {
 
   # In this function if required we clone the genestack repository
@@ -208,7 +256,6 @@ function generate_list_infrastructure () {
   # 4) envoy-proxy (Gateway API)
   # 5) kube-ovn
   # 6) metallb
-  # 7) libvirt
 
   print_log "INFO" "Generate required image list for infrastructure components"
 
@@ -401,7 +448,8 @@ function generate_list_additional () {
   # images required for additional services. Below are the service
   # for which the list of container images are generated
   # 1) redis
-  # 2) OVN 
+  # 2) OVN
+  # 3) utils: dns-utils,openstack-client,kubectl
 
   # Generate the list of container images for redis
 
@@ -475,6 +523,67 @@ function generate_list_additional () {
   grep -w "image:" "$DEFAULT_BASE_KUSTOMIZE_IMAGES_PATH/ovn-backup/base/ovn-backup.yaml" | \
     awk '{print $2}' >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
 
+  # Generate the list of required images for utils
+
+  print_log "INFO" "Generating the list of required images for utils dns,kubectl and openstack-client"
+
+  grep -w "image:"  "$GENESTACK_CLONE_PATH/manifests/utils/" -r | awk '{print $3}' \
+    >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+
+}
+
+function generate_list_openstack_services () {
+
+  # In this function we handle the generation of required
+  # container images for openstack services. The list of
+  # openstack services for which the image list is generated 
+  # is the below:
+  # 1) barbican
+  # 2) blazar
+  # 3) ceilometer
+  # 4) cinder
+  # 5) cloudkitty
+  # 6) designatea
+  # 7) freezer
+  # 8) glance
+  # 9) gnocchi
+  # 10) heat
+  # 11) horizon
+  # 12) ironic
+  # 13) keystone
+  # 14) libvirt
+  # 15) magnum
+  # 16) masakari
+  # 18) nova
+  # 19) neutron
+  # 20) octavia
+  # 21) placement
+
+  # Declare the local variable for tmp list of images
+  local tmp_helm_image_list="/var/tmp/service-helm-image-list.txt"
+  
+  print_log "INFO" "Generating required list of container images for services"
+
+  # Iterate over the list of service dirs
+  for sub_dir in "${DEFAULT_BASE_HELM_SUBDIRS[@]}"; do
+    parse_helm_override_files "$sub_dir"
+  done
+
+  sort -u "$tmp_helm_image_list" >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+}
+
+function generate_list_monitoring () {
+
+  # In this function we handle the generation of required 
+  # container images for monitoring. The list of monitoring
+  # for which the image list is generated
+  # 1) prometheus
+  # 2) grafana
+  # 3) alertmanager
+
+  # Generate the required images for prometheus
+  print_log "INFO" "Generating required list of container images for prometheus"
+
 }
 
 # set the trap for the error handling function
@@ -483,3 +592,4 @@ main
 generate_list_storage
 generate_list_infrastructure
 generate_list_additional
+generate_list_openstack_services

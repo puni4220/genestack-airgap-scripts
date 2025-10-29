@@ -7,21 +7,6 @@ set -E
 source "$(dirname "$(readlink -f "$0")")/lib/constants.vars"
 source "$(dirname "$(readlink -f "$0")")/lib/functions.sh"
 
-function main () {
-
-  # initiate the log file
-  #init_log
-
-  # if required clone the repo
-  clone_git_repo
-
-  #for base_helm_subdir in "${DEFAULT_BASE_HELM_SUBDIRS[@]}"; do
-    # call the function to iterate over the list of subdirs
-  #  parse_helm_overries "$base_helm_subdir"
-  #done
-
-  }
-
 function print_log () {
 
   # This function prints the message provided as an argument
@@ -334,15 +319,14 @@ function generate_list_infrastructure () {
 
   print_log "INFO" "Generating required image for mariadb-backup"
   
-  # For mariadb-backup image; we determine the image from the configmap
-  # for the version of helm chart for the mariadb-operator from Github
-  mariadb_backup_image=$(curl -sL "$GITHUB_BASE_URL/mariadb-operator/mariadb-operator/refs/tags/$mariadb_operator_image_tag/deploy/charts/mariadb-operator/templates/configmap.yaml" | \
-    grep "MARIADB_OPERATOR_IMAGE" | awk '{print $2}')
+  # Starting with mariadb-operator version 0.38 the mariadb-backup image is not hardcoded and it uses the same image as 
+  # mariadb-operator and it uses Chart.appVersion as the image tag and we now utilize mariadb-operator version > 0.38;
+  
+  print_log "DEBUG" "mariadb-backup uses the mariadb-operator image $mariadb_operator_image and tag $mariadb_operator_image_tag"
 
   # Append the images to the list
   echo "$mariadb_operator_image:$mariadb_operator_image_tag" >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
   echo "$mariadb_cluster_image" >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
-  echo "$mariadb_backup_image" >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
 
   # Generate the list of container images for memcached
 
@@ -581,15 +565,80 @@ function generate_list_monitoring () {
   # 2) grafana
   # 3) alertmanager
 
+  # Generate the required images for fluentbit
+  print_log "INFO" "Generating required list of container images for fluentbit"
+
+  # First obtain the version of fluentbit from the 
+  # helm-chart-versions.yaml
+  fluentbit_chart_version=$(grep 'fluentbit:' "$GENESTACK_CHART_VERSION_FILE" | sed 's/.*fluentbit: *//')
+
+  # If the directory for helm chart already exists remove the directory
+  # and then download the helm chart
+  if [ -d "/var/tmp/fluent" ]; then
+    rm -rf "/var/tmp/fluent"
+  fi
+
+  helm repo add openstack-helm https://tarballs.opendev.org/openstack/openstack-helm &> /dev/null
+  helm repo update &> /dev/null
+
+  # Pullthe helm chart for fluentbit and untar in a dir
+  helm pull openstack-helm/fluent-bit --version "$fluentbit_chart_version" \
+    --untar --untardir /var/tmp/fluent &> /dev/null
+
+  # Find the helm chart directory
+  helm_chart_dir=$(find /var/tmp/fluent/ -mindepth 1 -maxdepth 1 -type d)
+
+  # Within the helm chart directory find the values.yaml
+  helm_values_yaml=$(find "$helm_chart_dir" -mindepth 1 -maxdepth 1 -iname "values.yaml" -type f)
+
+  # From the helm values extract the required images
+  yaml2json "$helm_values_yaml" | jq -r '.images.tags' | jq -r '.[]' \
+    >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+
+  # Cleanup the tmp helm chart directory for fluent
+  rm -rf /var/tmp/fluent || true
+
   # Generate the required images for prometheus
   print_log "INFO" "Generating required list of container images for prometheus"
+
+}
+
+function main () {
+
+  # If required clone the repo
+  clone_git_repo
+
+  print_log "INFO" "The required container image list will be generated $DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+ 
+  # Check if the list of images already exists and create a backup
+  if [ -f "$DEFAULT_GENESTACK_HELM_IMAGE_LIST" ]; then
+    print_log "INFO" "Existing list of images is at $DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+    if [[ "$BACKUP_EXISTING_LIST" == "YES" ]]; then
+      # Create a backup of the existing list
+      print_log "INFO" "Creating backup of existing list"
+      mv "$DEFAULT_GENESTACK_HELM_IMAGE_LIST" "${DEFAULT_GENESTACK_HELM_IMAGE_LIST}_$(date +%Y%m%d_%H%M%S).bak"
+    elif [[ "$BACKUP_EXISTING_LIST" == "NO" ]]; then
+      # remove the existing list
+      print_log "INFO" "Removing the existing list"
+      rm -f "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
+    fi
+  fi
+
+  # Generate the list of required images
+  generate_list_storage
+  generate_list_infrastructure
+  generate_list_additional
+  generate_list_openstack_services
+  generate_list_monitoring
+
 
 }
 
 # set the trap for the error handling function
 trap 'error_handler' ERR
 main
-generate_list_storage
-generate_list_infrastructure
-generate_list_additional
-generate_list_openstack_services
+#generate_list_storage
+#generate_list_infrastructure
+#generate_list_additional
+#generate_list_openstack_services
+#generate_list_monitoring

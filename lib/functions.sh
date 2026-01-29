@@ -90,3 +90,28 @@ function add_helm_repo () {
     helm repo update &> /dev/null
   fi
 }
+
+
+function init_log () {
+  local basedir="${HOME}/logs/genestack-airgap-scripts"
+  local source_file="${BASH_SOURCE[1]/.sh}"
+  mkdir -p ${basedir}
+
+  touch ${basedir}/${source_file}.$$
+  export LOG_FILE=${basedir}/${source_file}.$$
+}
+
+function write_log () {
+  local sev="$1"
+  local msg="$2"
+
+  echo "$(date) [$sev] $msg" >> $LOG_FILE
+}
+
+function installYaml2json () {
+
+  wget -q -O /usr/local/bin/yaml2json https://github.com/bronze1man/yaml2json/releases/download/v1.3.5/yaml2json_linux_amd64
+  chmod +x /usr/local/bin/yaml2json
+
+  write_log INFO "Installed /usr/local/bin/yaml2json"
+}

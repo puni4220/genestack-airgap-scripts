@@ -7,6 +7,8 @@ set -E
 source "$(dirname "$(readlink -f "$0")")/lib/constants.vars"
 source "$(dirname "$(readlink -f "$0")")/lib/functions.sh"
 
+init_log
+
 function print_log () {
 
   # This function prints the message provided as an argument
@@ -24,6 +26,8 @@ function print_log () {
   elif [[ "$log_level" != "DEBUG" ]]; then
     echo -e "\e[36m$(date '+%Y-%m-%d %H:%M:%S') [$log_level] - $(echo "$log_message" | sed 's/  */ /g')\e[0m"
   fi
+
+  write_log $log_level "$log_message"
 }
 
 function parse_helm_override_files () {
@@ -48,7 +52,7 @@ function parse_helm_override_files () {
 
   # Iterate over the files in the directory
   for yaml_file in $(ls -1 .); do
-    yaml2json "$yaml_file" > "$tmp_json_service_overrides"
+    yaml2json < "$yaml_file" > "$tmp_json_service_overrides"
 
     print_log "INFO" "parsing yaml $yaml_file in service directory $service_dir"
 
@@ -150,12 +154,12 @@ function generate_list_storage () {
   print_log "INFO" "Generate the list of required container images for longhorn \
     from values.yaml file"
   # From the values.yaml for longhorn extract the required images for longhorn
-  yaml2json "$tmp_helm_values" | jq -r '.image.longhorn' | jq -r '.[] | "\(.repository)':'\(.tag)"' \
+  yaml2json < "$tmp_helm_values" | jq -r '.image.longhorn' | jq -r '.[] | "\(.repository)':'\(.tag)"' \
     >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
 
   print_log "INFO" "Generate the list of required container images for longhorn csi"
   # From the values.yaml for longhorn extra the required images for longhorn csi
-  yaml2json "$tmp_helm_values" | jq -r '.image.csi' | jq -r '.[] | "\(.repository)':'\(.tag)"' \
+  yaml2json < "$tmp_helm_values" | jq -r '.image.csi' | jq -r '.[] | "\(.repository)':'\(.tag)"' \
     >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
 
   # Generate the list of container images for rook-ceph
@@ -225,7 +229,7 @@ function generate_list_storage () {
     -sL "$GITHUB_BASE_URL/topolvm/topolvm/refs/heads/$helm_chart_version/charts/topolvm/Chart.yaml"
 
   # From the Chart.yaml extract extract the required images
-  yaml2json "$tmp_helm_chart_yaml" | jq -r ".annotations" | jq '."artifacthub.io/images"' | \
+  yaml2json < "$tmp_helm_chart_yaml" | jq -r ".annotations" | jq '."artifacthub.io/images"' | \
     sed -e 's/\\n/\n/g' | sed 's/"//g' | grep -oP 'image: \K.*' >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
 
 }
@@ -303,7 +307,7 @@ function generate_list_infrastructure () {
 
   # For mariadb-operator image; the image is specified in 
   # base-helm-configs/mariadb-operator/mariadb-operator-helm-overrides.yaml
-  mariadb_operator_image=$(yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/mariadb-operator/mariadb-operator-helm-overrides.yaml" | \
+  mariadb_operator_image=$(yaml2json < "$DEFAULT_BASE_HELM_IMAGES_PATH/mariadb-operator/mariadb-operator-helm-overrides.yaml" | \
     jq -r '.image.repository')
 
   # For the tag for the mariadb-operator image; the default is to
@@ -314,7 +318,7 @@ function generate_list_infrastructure () {
 
   # For mariadb-cluster image; the image is directly specified in
   # base-kustomize/mariadb-cluster/base/mariadb-replication.yaml
-  mariadb_cluster_image=$(yaml2json "$DEFAULT_BASE_KUSTOMIZE_IMAGES_PATH/mariadb-cluster/base/mariadb-replication.yaml" | \
+  mariadb_cluster_image=$(yaml2json < "$DEFAULT_BASE_KUSTOMIZE_IMAGES_PATH/mariadb-cluster/base/mariadb-replication.yaml" | \
     jq -r '.spec.image')
 
   print_log "INFO" "Generating required image for mariadb-backup"
@@ -334,7 +338,7 @@ function generate_list_infrastructure () {
 
   # for memcached we have the image defined in helm overrides
   # base-helm-configs/memcached/memcached-helm-overrides.yaml
-  memcached_cluster_image=$(yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/memcached/memcached-helm-overrides.yaml" | \
+  memcached_cluster_image=$(yaml2json < "$DEFAULT_BASE_HELM_IMAGES_PATH/memcached/memcached-helm-overrides.yaml" | \
     jq -r '.image | "\(.registry)/\(.repository)':'\(.tag)"')
 
   # Append the images to the list
@@ -364,7 +368,7 @@ function generate_list_infrastructure () {
   helm_values_yaml=$(find "$helm_chart_dir" -iname "values.yaml" -type f)
 
   # From the helm values extract the required images
-  yaml2json "$helm_values_yaml" | jq -r '.global.images' | jq -r '.[] | "\(.image)"' \
+  yaml2json < "$helm_values_yaml" | jq -r '.global.images' | jq -r '.[] | "\(.image)"' \
     >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
 
   # Cleanup the tmp helm chart directory for envoyproxy-gateway
@@ -377,10 +381,10 @@ function generate_list_infrastructure () {
   # For kube-ovn we have defined the required container images
   # in base-helm-configs/kube-ovn/kube-ovn-helm-overrides.yaml
 
-  kube_ovn_helm_registry=$(yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/kube-ovn/kube-ovn-helm-overrides.yaml" | \
+  kube_ovn_helm_registry=$(yaml2json < "$DEFAULT_BASE_HELM_IMAGES_PATH/kube-ovn/kube-ovn-helm-overrides.yaml" | \
     jq -r '.global.registry.address')
 
-  kube_ovn_tag=$(yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/kube-ovn/kube-ovn-helm-overrides.yaml" | \
+  kube_ovn_tag=$(yaml2json < "$DEFAULT_BASE_HELM_IMAGES_PATH/kube-ovn/kube-ovn-helm-overrides.yaml" | \
     jq -r '.global.images.kubeovn.tag')
 
   # For kube-ovn we have 2 images 
@@ -416,13 +420,13 @@ function generate_list_infrastructure () {
     -sL "$GITHUB_BASE_URL/metallb/metallb/refs/tags/$metallb_chart_version/charts/metallb/values.yaml"
  
   # Append the values to the list
-  yaml2json "$TMP_HELM_VALUES_YAML" | jq -r --arg tag "$metallb_chart_version" '"\(.controller.image.repository):\($tag)"' \
+  yaml2json < "$TMP_HELM_VALUES_YAML" | jq -r --arg tag "$metallb_chart_version" '"\(.controller.image.repository):\($tag)"' \
     >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
-  yaml2json "$TMP_HELM_VALUES_YAML" | jq -r --arg tag "$metallb_chart_version" '"\(.speaker.image.repository):\($tag)"' \
+  yaml2json < "$TMP_HELM_VALUES_YAML" | jq -r --arg tag "$metallb_chart_version" '"\(.speaker.image.repository):\($tag)"' \
     >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
-  yaml2json "$TMP_HELM_VALUES_YAML" | jq -r '"\(.prometheus.rbacProxy.repository):\(.prometheus.rbacProxy.tag)"' \
+  yaml2json < "$TMP_HELM_VALUES_YAML" | jq -r '"\(.prometheus.rbacProxy.repository):\(.prometheus.rbacProxy.tag)"' \
     >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
-  yaml2json "$TMP_HELM_VALUES_YAML" | jq -r '"\(.speaker.frr.image.repository):\(.speaker.frr.image.tag)"' \
+  yaml2json < "$TMP_HELM_VALUES_YAML" | jq -r '"\(.speaker.frr.image.repository):\(.speaker.frr.image.tag)"' \
     >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
 }
 
@@ -474,21 +478,21 @@ function generate_list_additional () {
   helm_values_yaml=$(find "$helm_chart_dir" -mindepth 1 -maxdepth 1 -iname "values.yaml" -type f)
 
   # From the values.yaml extract the required container images for redis-operator
-  yaml2json "$helm_values_yaml" | jq -r --arg tag "$redis_chart_version" '"\(.redisOperator.imageName):\($tag)"' \
+  yaml2json < "$helm_values_yaml" | jq -r --arg tag "$redis_chart_version" '"\(.redisOperator.imageName):\($tag)"' \
     >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
   
   # For redis-replication and redis-exporter the container image is
   # in base-helm-configs/redis-operator-replication/redis-replication-helm-overrides.yaml
-  yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-operator-replication/redis-replication-helm-overrides.yaml" | \
+  yaml2json < "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-operator-replication/redis-replication-helm-overrides.yaml" | \
     jq -r '.redisReplication | "\(.image):\(.tag)"' >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
-  yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-operator-replication/redis-replication-helm-overrides.yaml" | \
+  yaml2json < "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-operator-replication/redis-replication-helm-overrides.yaml" | \
     jq -r '.redisExporter | "\(.image):\(.tag)"' >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST" 
 
   # For redis-sentinel and redis-exporter the container image is 
   # in base-helm-configs/redis-sentinel/redis-sentinel-helm-overrides.yaml
-  yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-sentinel/redis-sentinel-helm-overrides.yaml" | \
+  yaml2json < "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-sentinel/redis-sentinel-helm-overrides.yaml" | \
     jq -r '.redisSentinel | "\(.image):\(.tag)"' >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
-  yaml2json "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-sentinel/redis-sentinel-helm-overrides.yaml" | \
+  yaml2json < "$DEFAULT_BASE_HELM_IMAGES_PATH/redis-sentinel/redis-sentinel-helm-overrides.yaml" | \
     jq -r '.redisExporter | "\(.image):\(.tag)"' >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
 
   # Generate the requird list of images for OVN
@@ -592,7 +596,7 @@ function generate_list_monitoring () {
   helm_values_yaml=$(find "$helm_chart_dir" -mindepth 1 -maxdepth 1 -iname "values.yaml" -type f)
 
   # From the helm values extract the required images
-  yaml2json "$helm_values_yaml" | jq -r '.images.tags' | jq -r '.[]' \
+  yaml2json < "$helm_values_yaml" | jq -r '.images.tags' | jq -r '.[]' \
     >> "$DEFAULT_GENESTACK_HELM_IMAGE_LIST"
 
   # Cleanup the tmp helm chart directory for fluent
@@ -636,6 +640,9 @@ function main () {
 
   # If required clone the repo
   clone_git_repo
+
+  # Download required binaries
+  installYaml2json
 
   print_log "INFO" "The required container image list will be generated $DEFAULT_GENESTACK_HELM_IMAGE_LIST"
  

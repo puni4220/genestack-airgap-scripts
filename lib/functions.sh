@@ -90,3 +90,20 @@ function add_helm_repo () {
     helm repo update &> /dev/null
   fi
 }
+
+
+function init_log () {
+  local basedir="${HOME}/logs/genestack-airgap-scripts"
+  local source_file="${BASH_SOURCE[1]/.sh}"
+  mkdir -p ${basedir}
+
+  touch ${basedir}/${source_file}.$$
+  export LOG_FILE=${basedir}/${source_file}.$$
+}
+
+function write_log () {
+  local sev="$1"
+  local msg="$2"
+
+  echo "$(date) [$sev] $msg" >> $LOG_FILE
+}
